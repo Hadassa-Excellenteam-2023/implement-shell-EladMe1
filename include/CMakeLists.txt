@@ -1,0 +1,1 @@
+﻿target_include_directories (implement-shell-EladMe1 PRIVATE ${CMAKE_CURRENT_LIST_DIR})
