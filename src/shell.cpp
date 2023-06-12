@@ -8,31 +8,43 @@
  */
 void Shell::run() {
     std::string input;
+    std::vector<BackgroundProcess> backgroundProcesses;
 
-    while (true) {
-        removeFinishedProcesses();
-
+    while (true)
+    {
         std::cout << "Shell> ";
         std::getline(std::cin, input);
 
-        if (input == "exit") {
+        if (input == "exit")
             break;
-        }
 
-        if (input == "myjobs") {
+        if (input == "myjobs")
+        {
             showBackgroundProcesses();
             continue;
         }
 
-        // Check if the command should be run in the background
-        bool runInBackground = false;
-        if (!input.empty() && input.back() == '&') {
-            runInBackground = true;
-            input.pop_back();
+        std::vector<PipeCommand> pipeCommands;
+
+        // Split the input by pipe symbol '|'
+        std::vector<std::string> commands = splitString(input, '|');
+        for (const auto& cmd : commands) {
+            std::string trimmedCmd = cmd;
+            if (!trimmedCmd.empty() && trimmedCmd.front() == ' ')
+                trimmedCmd = trimmedCmd.substr(1);
+            if (!trimmedCmd.empty() && trimmedCmd.back() == ' ')
+                trimmedCmd.pop_back();
+            bool runInBackground = false;
+            if (!trimmedCmd.empty() && trimmedCmd.back() == '&') {
+                runInBackground = true;
+                trimmedCmd.pop_back();
+            }
+            pipeCommands.push_back({ trimmedCmd, runInBackground });
         }
 
-        executeCommand(input, runInBackground);
+        executePipeline(pipeCommands, backgroundProcesses);
     }
+
 }
 
 /**
@@ -221,4 +233,60 @@ void Shell::removeFinishedProcesses() {
         }
     }
 }
+
+void Shell::executePipeline(const std::vector<PipeCommand>& commands, std::vector<BackgroundProcess>& backgroundProcesses) {
+    std::vector<int> pipes(commands.size() - 1);  // Create pipes for communication
+
+    for (size_t i = 0; i < commands.size(); ++i) {
+        int pipeFD[2];
+        if (i < commands.size() - 1) {
+            if (pipe(pipeFD) == -1) {
+                std::cerr << "Failed to create pipe" << std::endl;
+                return;
+            }
+        }
+
+        pid_t pid = fork();
+
+        if (pid == -1) {
+            std::cerr << "Failed to create child process" << std::endl;
+            return;
+        } else if (pid == 0) {
+            // Child process
+            if (i > 0) {
+                dup2(pipes[i - 1], STDIN_FILENO);  // Redirect input from previous pipe
+                close(pipes[i - 1]);  // Close the read end of the previous pipe
+            }
+
+            if (i < commands.size() - 1) {
+                dup2(pipeFD[1], STDOUT_FILENO);  // Redirect output to the next pipe
+                close(pipeFD[0]);  // Close the read end of the current pipe
+                close(pipeFD[1]);  // Close the write end of the current pipe
+            }
+
+            executeCommand(commands[i].command, commands[i].runInBackground);
+
+            exit(EXIT_SUCCESS);
+        } else {
+            // Parent process
+            if (i > 0)
+                close(pipes[i - 1]);  // Close the read end of the previous pipe
+
+            if (i < commands.size() - 1)
+                pipes[i] = pipeFD[0];  // Store the read end of the current pipe for the next command
+
+            if (!commands[i].runInBackground) {
+                int status;
+                waitpid(pid, &status, 0);
+                if (status != 0)
+                    std::cerr << "Command exited with non-zero status: " << commands[i].command << std::endl;
+            }
+        }
+    }
+
+    // Close all remaining pipe file descriptors in the parent process
+    for (int pipeFD : pipes)
+        close(pipeFD);
+}
+
 

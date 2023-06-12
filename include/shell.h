@@ -1,6 +1,5 @@
 #pragma once
 
-#pragma once
 
 #include <string>
 #include <vector>
@@ -20,6 +19,12 @@ struct BackgroundProcess {
     std::string command;
 };
 
+struct PipeCommand {
+    std::string command;
+    bool runInBackground;
+};
+
+
 class Shell {
 public:
     void run();
@@ -34,6 +39,7 @@ private:
     void handleInputRedirection(const std::string& inputFile);
     void handleOutputRedirection(const std::string& outputFile);
     void executeSingleCommand(const std::string& command);
+    void executePipeline(const std::vector<PipeCommand>& commands, std::vector<BackgroundProcess>& backgroundProcesses);
 
     std::vector<BackgroundProcess> backgroundProcesses;
 };
